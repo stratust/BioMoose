@@ -134,7 +134,7 @@ class Bio::Moose::HydraBreaks {
         #    $color = "0,102,0";    # duplication breakpoints are green
         #}
         elsif ( $self->strand1 eq '-' && $self->strand2 eq '+' ) {
-            $color = "0,102,0";    # duplication breakpoints are red
+            $color = "153,0,0";    # duplication breakpoints are red
         }
         elsif ( $self->strand1 eq '+' && $self->strand2 eq '+' ) {
             $color = "0,51,204";    # inversion breakpoints are blue
