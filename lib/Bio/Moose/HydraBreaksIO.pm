@@ -109,7 +109,10 @@ class Bio::Moose::HydraBreaksIO {
         close($in);
         return \@objects;
     }
-    
-    
 
+    method summary_breaks {
+        while ( my $feat = $self->next_feature ){
+            
+        }
+    }
 }

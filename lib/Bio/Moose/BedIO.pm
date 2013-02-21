@@ -30,6 +30,22 @@ class Bio::Moose::BedIO {
         },
     );
 
+    has 'features_sorted' => (
+        is            => 'rw',
+        isa           => 'ArrayRef[Bio::Moose::Bed]',
+        traits        => ['Array'],
+        lazy          => 1,
+        builder       => '_build_features_sorted',
+        documentation => 'ArrayRef of sorted features by chrom, chromStar and chromEnd',
+#        handles       => {
+            #all_features   => 'elements',
+            #add_feature    => 'push',
+            #next_feature   => 'shift',
+            #map_features   => 'map',
+            #count_features => 'count',
+        #},
+    );
+
     method _create_bed_object (Str $row, Str $track_row, Int $init_pos) {
         chomp $row;
         my @column = split /\s+/, $row;
@@ -65,7 +81,6 @@ class Bio::Moose::BedIO {
 
         return $feat;
     }
-
     method _build_features {
         my @objects;
         my $track_row = 0;
@@ -90,4 +105,17 @@ class Bio::Moose::BedIO {
         close($in);
         return \@objects;
     }
+
+    method _build_features_sorted {
+        my @sorted_features = sort {
+                   $a->chrom cmp $b->chrom
+                || $a->chromStart <=> $b->chromStart
+                || $a->chromEnd <=> $b->chromEnd
+
+        } @{ $self->features };
+        return \@sorted_features;
+
+    }
+
+
 }
