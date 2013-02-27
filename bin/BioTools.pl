@@ -265,7 +265,7 @@ class MyApp::Cluster {
                # binomial; n_total is the number of success
                my @cluster = @{ $c->{$key}->{features} };
                my $hotspot_len
-                    = $cluster[$#cluster]->chromStart - $cluster[0]->chromStart;
+                    = $cluster[$#cluster]->chromEnd - $cluster[0]->chromStart;
                my $n_total = scalar @cluster;
                my $diff = ( $hotspot_len - $n_total ) + 1;
                my $p = $self->probability( $diff, $n_total );
