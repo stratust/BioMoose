@@ -225,11 +225,15 @@ class MyApp::Cluster {
  
                     if ( $p < $self->cutoff_pair && $cluster{$j} ) {
                         push @{ $cluster{$j}->{features} }, $this;
+                        push @{ $cluster{$j}->{pvalue} }, $p;
                     }
                     elsif ( $p < $self->cutoff_pair && !$cluster{$j} ) {
                         push @{ $cluster{$j}->{features} }, ( $last, $this );
+                        push @{ $cluster{$j}->{pvalue} }, $p;
                     }
                     elsif ( $p >= $self->cutoff_pair && $cluster{$j} ) {
+                        #say $_->chromStart for @{$cluster{$j}->{features}};
+                        #say join " ", @{$cluster{$j}->{pvalue}};
                         $j++;
                     }
                 }
@@ -244,7 +248,6 @@ class MyApp::Cluster {
             # current object becomes the last
             $last = $this;
         }
-        
         return \%cluster;
     }
 
