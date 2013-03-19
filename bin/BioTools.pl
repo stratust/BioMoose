@@ -281,20 +281,39 @@ class MyApp::Cluster {
                 }
                 #$p = 1 if $hotspot_len < 0;
                 die "Hotspot_lengh is negative" if $hotspot_len < 0;
+ 
+                # Counting left and right
+                my ( $n_left, $n_right ) = ( 0, 0 );
+                
+                foreach my $feat (@cluster) {
+                    $n_left++  if $feat->name =~ /left/;
+                    $n_right++ if $feat->name =~ /right/;
+                }
+                
+                my $has_minority = 0;
+                if ( $self->minority ) {
+                    if ( $n_left == 0 && $n_right == 0 ) {
+                        die "Houston, we have a problem! No left and no right primer found!";
+                    }
 
-                if ( $p < $self->cutoff ) {
+                    if (   ( $n_left / $n_total >= $self->minority )
+                        && ( $n_right / $n_total >= $self->minority ) )
+                    {
+                        $has_minority = 1;
+                    }
+
+                }
+                else {
+                    $has_minority = 1;
+                }
+
+                if ( $p < $self->cutoff  && $has_minority ) {
                     $filtered_cluster{$key}->{features} = \@cluster;
                     $filtered_cluster{$key}->{pvalue} = $p;
                     $filtered_cluster{$key}->{hotspot_len} = $hotspot_len;
                     $filtered_cluster{$key}->{chr} = $cluster[0]->chrom;
                     $filtered_cluster{$key}->{start} = $cluster[0]->chromStart;
                     $filtered_cluster{$key}->{end} = $cluster[$#cluster]->chromEnd;
-                    my ($n_left, $n_right) = (0,0);
-                    foreach my $feat (@cluster) {
-                        $n_left++ if $feat->name =~ /left/;
-                        $n_right++ if $feat->name =~ /right/;
-                    }
-
                     $filtered_cluster{$key}->{n_left} = $n_left;
                     $filtered_cluster{$key}->{n_right} = $n_right;
                 }
