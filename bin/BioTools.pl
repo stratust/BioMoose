@@ -139,7 +139,7 @@ class MyApp::Cluster {
         cmd_aliases     => [qw(n)],
         required      => 1,
         default      => 3,
-        documentation => q[Minimum of translocation to form a "hotspot" cluster],
+        documentation => q[Minimum of translocations to form a "hotspot" cluster],
     );
 
     has 'transloc_bed' => (
@@ -273,15 +273,12 @@ class MyApp::Cluster {
                my $diff = ( $hotspot_len - $n_total ) + 1;
                my $p = $self->probability( $diff, $n_total );
                 
-               
-               $p = 1 unless defined($p);
+               #$p = 1 unless defined($p);
                 
                 # If $hotspot_len - $n_total is negative $p is null
-                #if ($diff < 0){
-                #    say Dumper @cluster;
-                #    say $key;
-                #    die;
-                #}
+                if ($diff < 0){
+                    $p = 0;
+                }
                 #$p = 1 if $hotspot_len < 0;
                 die "Hotspot_lengh is negative" if $hotspot_len < 0;
 
