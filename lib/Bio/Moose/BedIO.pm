@@ -5,13 +5,26 @@ use Method::Signatures::Modifiers;
 use Modern::Perl;
 
 class Bio::Moose::BedIO {
+    with 'Bio::Moose::Role::BEDFile';
     use Bio::Moose::Bed;
+    use IO::ScalarArray;
+    use Class::MOP;
+    use POSIX;
+    use Storable 'dclone';
 
     has 'file' => (
         is            => 'ro',
-        isa           => 'Str',
+        isa           => 'BEDFileI',
         required      => 1,
+        coerce        => 1,
         documentation => 'Bed file to be open',
+    );
+
+    has 'outfile' => (
+        is            => 'rw',
+        isa           => 'BEDFileO',
+        coerce        => 1,
+        documentation => 'Bed file to be written',
     );
 
     has 'features' => (
@@ -47,12 +60,11 @@ class Bio::Moose::BedIO {
     );
 
     method _create_bed_object (Str $row, Str $track_row, Int $init_pos) {
-        chomp $row;
         my @column = split /\s+/, $row;
         my $column_number = scalar @column;
 
         #Check minimum number of columns
-        die "File " . $self->file . " has < then 3 columns"
+        die "File " . $self->file . " has < than 3 columns"
             if ( $column_number < 3 );
 
         my $feat = Bio::Moose::Bed->new(
@@ -61,7 +73,6 @@ class Bio::Moose::BedIO {
             chromEnd   => $column[2],
             init_pos   => $init_pos,
         );
-
         $feat->track_line($track_row) if $track_row;
 
         my @attr = (
@@ -81,14 +92,13 @@ class Bio::Moose::BedIO {
 
         return $feat;
     }
+
     method _build_features {
         my @objects;
         my $track_row = 0;
         my $init_pos  = 1;
 
-        open( my $in, '<', $self->file )
-            || die "Cannot open/read file " . $self->file . "!";
-
+        my $in = $self->file;
         while ( my $row = <$in> ) {
             chomp $row;
 
@@ -114,8 +124,32 @@ class Bio::Moose::BedIO {
 
         } @{ $self->features };
         return \@sorted_features;
-
+    }
+    
+    method write (Bio::Moose::Bed $bed_object) {
+        if ( $self->outfile ) {
+            my $out = $self->outfile;
+            print $out $bed_object->row;
+        }
+        else {
+            print $bed_object->row;
+        }
     }
 
+    method write_all_features {
+        foreach my $f ( @{ $self->features } ) {
+            $self->write($f);
+        }
+    }
 
+    # return BEDIO object with center of intervals
+    method get_middle_intervals {
+        my $middleIO = dclone $self->features;
+        foreach my $f (@{$middleIO}) {
+            my $middle_start =  floor( ( ($f->chromEnd + $f->chromStart ) ) / 2 );
+            $f->chromStart($middle_start );
+            $f->chromEnd( $middle_start + 1);
+        }
+        return $middleIO;
+    }
 }

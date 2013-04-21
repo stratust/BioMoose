@@ -2,24 +2,27 @@
 use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
 
 class Bio::Moose::Bed {
     use Bio::Moose::DependencyTypes;
     use MooseX::Attribute::Dependent;
 
     # BED Fields
-    has 'chrom' => ( is => 'rw', isa => 'Str', required => 1 );
+    has 'chrom' =>
+        ( is => 'rw', isa => 'Str', required => 1, predicate => 'has_chrom' );
+
     has 'chromStart' => (
         is         => 'rw',
         isa        => 'Int',
         required   => 1,
-        dependency => SmallerThan['chromEnd']
+        predicate => 'has_chromStart',
+        dependency => SmallerThan ['chromEnd']
     );
     has 'chromEnd' => (
         is         => 'rw',
         isa        => 'Int',
         required   => 1,
+        predicate => 'has_chromEnd',
         dependency => BiggerThan ['chromStart']
     );
     has 'name'        => ( is => 'rw', isa => 'Str' );
@@ -42,6 +45,45 @@ class Bio::Moose::Bed {
         
     }
     
+    method size {
+        return $self->chromEnd - $self->chromStart;
+    }
+
+    method row {
+        my @keys = qw/chrom chromStart chromEnd name score strand thickStart
+            thickEnd itemRgb blockCount blockSizes blockStarts/;
+        my @k_print;
+        foreach my $k (@keys) {
+            push @k_print, $k if ( defined $self->$k );
+        }
+        my $str = join "\t", @{$self}{@k_print};
+        return $str."\n";
+
+    }
+   
+    method remove_upstream (Int $size) {
+        if ($self->strand eq '+') {
+            $self->chromStart( $self->chromStart + $size);
+        }
+        elsif ($self->strand eq '-') {
+            $self->chromEnd($self->chromEnd - $size);
+        }
+        else{
+            die "Cannot remove upstream without strand information";
+        }
+    }
+    
+    method remove_downstream (Int $size) {
+        if ($self->strand eq '+') {
+            $self->chromEnd($self->chromEnd - $size);
+        }
+        elsif ($self->strand eq '-') {
+            $self->chromStart($self->chromStart + $size);
+        }
+        else{
+            die "Cannot remove downstream without strand information";
+        }
+    }
 
 }
 
