@@ -144,7 +144,6 @@ role Custom::Log {
     }
 }
 
-
 class MyApp is dirty {
     use MooseX::App qw(Color);
 }
@@ -783,7 +782,22 @@ class MyApp::Cumulative_Density {
         $self->log_info($complement->show_cmd_line);
         # Run complement
         $complement->run();
-        return $complement->as_BedIO->features;
+
+        my $feats = $complement->as_BedIO->features;
+        my @aux;
+
+        $self->log_info("Filtering Intergenic regions (complement of slopped input");
+        my $min_region_size = ( $self->tss + $self->tts ) * 0.5 ;
+        $self->log_info("   Removing regions in chrM and chr*_random");
+        $self->log_info("   Removing regions smaller than $min_region_size");
+        foreach my $f ( @{$feats} ) {
+            unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ ) {
+                if ($f->size >= $min_region_size){
+                   push @aux,$f;
+                }
+            }
+        }
+        return \@aux; 
     }
         
     method build_body_bins($this_input) {
