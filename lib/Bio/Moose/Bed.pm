@@ -41,7 +41,7 @@ class Bio::Moose::Bed {
     has 'table_name' => ( is => 'ro', isa => 'Str', );
     has 'init_pos' => ( is => 'ro', isa => 'Int', );
   
-    has size => ( is => 'rw', isa => 'Int', lazy => 1, builder => ')build_size' );
+    has size => ( is => 'rw', isa => 'Int', lazy => 1, builder => 'build_size' );
 
 
     method make_windows (Int :$number_of_windows ) {

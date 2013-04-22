@@ -652,7 +652,7 @@ class MyApp::Cumulative_Density {
         lazy    => 1,
         default => sub {
             my ($self) = @_;
-            my $normfactor = (1e9 / scalar @{ $self->_reads });
+            my $normfactor = (1e6 / scalar @{ $self->_reads });
             return $normfactor;
         },
         documentation => 'Normalize by this factor',
@@ -928,8 +928,8 @@ class MyApp::Cumulative_Density {
         my $n_intergenic = $self->n_intergenic_regions;
         # Normalizing by gene number * factor
         foreach my $k ( keys %bodyD ) {
-            $bodyD{$k}{smooth} = $bodyD{$k}{rpb}
-                / ( $n_intergenic  * $self->normFactor );
+            $bodyD{$k}{smooth} = ($bodyD{$k}{rpb}
+                / $n_intergenic)  * $self->normFactor;
         }
         #say "$_ => $bodyD{$_}{smooth} ($bodyD{$_}{index})"
         #    for ( sort { $a <=> $b } keys %bodyD );
@@ -972,8 +972,8 @@ class MyApp::Cumulative_Density {
         # Normalizing by gene number * factor
         
         foreach my $k ( keys %bodyD ) {
-            $bodyD{$k}{smooth} = $bodyD{$k}{rpb}
-                / ( $self->n_genes * $self->normFactor );
+            $bodyD{$k}{smooth} = ($bodyD{$k}{rpb}
+                / $self->n_genes) * $self->normFactor ;
         }
         #say "$_ => $bodyD{$_}{smooth} ($bodyD{$_}{index})"
         #    for ( sort { $a <=> $b } keys %bodyD );
@@ -1032,8 +1032,8 @@ class MyApp::Cumulative_Density {
 
         # Normalizing by gene number * factor
         foreach my $k ( keys %fixedD ) {
-            $fixedD{$k}{smooth} = $fixedD{$k}{rpb}
-                / ( $self->n_genes  * $self->normFactor );
+            $fixedD{$k}{smooth} = ($fixedD{$k}{rpb}
+                / $self->n_genes)  * $self->normFactor ;
         }
         #say "$_ => $fixedD{$_}{smooth} ($fixedD{$_}{index})"
         #    for ( sort { $a <=> $b } keys %fixedD );
