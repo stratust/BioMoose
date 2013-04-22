@@ -40,12 +40,15 @@ class Bio::Moose::Bed {
     has 'genome' =>  ( is => 'ro', isa => 'Str', required => 0 );
     has 'table_name' => ( is => 'ro', isa => 'Str', );
     has 'init_pos' => ( is => 'ro', isa => 'Int', );
-   
+  
+    has size => ( is => 'rw', isa => 'Int', lazy => 1, builder => ')build_size' );
+
+
     method make_windows (Int :$number_of_windows ) {
         
     }
     
-    method size {
+    method build_size {
         return $self->chromEnd - $self->chromStart;
     }
 

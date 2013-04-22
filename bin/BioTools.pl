@@ -565,6 +565,13 @@ class MyApp::Cumulative_Density {
         documentation => q[Remove TSS+body+TTS overlapping genes form analysis],
     );
 
+    option 'only_genes_with_reads' => (
+        is            => 'rw',
+        isa           => 'Bool',
+        default       => 0,
+        documentation => q[Only analyse genes with reads],
+    );
+
     has '_filter_input' => (
         is            => 'rw',
         isa           => 'ArrayRef[Bio::Moose::Bed]',
@@ -629,7 +636,12 @@ class MyApp::Cumulative_Density {
         lazy      => 1,
         default => sub {
             my ($self) = @_;
-            return Bio::Moose::BedIO->new(file=>$self->reads)->features;
+            my $feats = Bio::Moose::BedIO->new(file=>$self->reads)->features;
+            my @aux;
+            foreach my $f (@{$feats}) {
+                push @aux, $f unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ );
+            }
+            return \@aux;
         },
         documentation => 'Read object',
     );
@@ -640,10 +652,70 @@ class MyApp::Cumulative_Density {
         lazy    => 1,
         default => sub {
             my ($self) = @_;
-            return 1e6 / scalar @{ $self->_reads };
+            my $normfactor = (1e9 / scalar @{ $self->_reads });
+            return $normfactor;
         },
         documentation => 'Normalize by this factor',
     );
+
+    has 'n_genes' => (
+        is            => 'rw',
+        isa           => 'Int',
+        lazy => 1,
+        default => sub{
+            my ($self) = @_;
+            my $n_gene=0;
+            if ( $self->only_genes_with_reads ) {
+                my $slop = Bio::Moose::BedTools::Slop->new(
+                    i => $self->_filter_input,
+                    g => $self->genome,
+                    l => $self->tss,
+                    r => $self->tts,
+                    s => 1,
+                );
+
+                # Run slopbed
+                $slop->run();
+
+                my $intersect = Bio::Moose::BedTools::Intersect->new(
+                    a => $slop->as_BedIO->features,
+                    b => $self->_reads,
+                    u => 1,
+                );
+                $intersect->run;
+
+                $n_gene = scalar @{ $intersect->as_BedIO->features };
+            }
+            else {
+                $n_gene = scalar @{ $self->_filter_input };
+            }
+            return $n_gene;
+        }
+    );
+
+    has 'n_intergenic_regions' => (
+        is            => 'rw',
+        isa           => 'Int',
+        lazy => 1,
+        default => sub{
+            my ($self) = @_;
+            my $n_region = 0;
+            if ( $self->only_genes_with_reads ) {
+                my $intersect = Bio::Moose::BedTools::Intersect->new(
+                    a => $self->intergenic_bed,
+                    b => $self->_reads,
+                    u => 1,
+                );
+                $intersect->run;
+                $n_region = scalar @{ $intersect->as_BedIO->features };
+            }
+            else {
+                $n_region=scalar @{ $self->intergenic_bed };                
+            }
+            return $n_region;
+        }
+    );
+
     
     has 'intergenic_bed' => (
         is            => 'rw',
@@ -671,9 +743,15 @@ class MyApp::Cumulative_Density {
         $self->log_info( $gene_i_gene->show_cmd_line );
         $gene_i_gene->run;
 
+        my $orig_input = Bio::Moose::BedIO->new(file=>$self->input)->features;
+
         my @genes_no_overlap;
+        my $i =0;
         foreach my $f ( @{ $gene_i_gene->as_BedIO->features } ) {
-            push @genes_no_overlap, $f unless $f->thickStart > 1;
+            if ( $f->thickStart == 1){
+                push @genes_no_overlap, $orig_input->[$i];
+            }
+            $i++;
         }
 
         $self->log_info( "   - Number of genes without overlap: "
@@ -686,7 +764,7 @@ class MyApp::Cumulative_Density {
             $file  = \@genes_no_overlap;
         }else{
             $self->log_info( "      Keeping overlapping genes ( --remove_overlapping_genes = 0 )" );
-            $file = $gene_i_gene->as_BedIO->features;
+            $file = $orig_input;
         }
 
         my $in    = Bio::Moose::BedIO->new( file => $file );
@@ -696,7 +774,7 @@ class MyApp::Cumulative_Density {
             "   - Number of genes before filter: " . scalar @{$feats} );
 
         my @aux;
-        my $min_gene_size = ( $self->tss + $self->tts ) * 1.5 ;
+        my $min_gene_size = ( $self->tss + $self->tts ) * 0.5 ;
 
         $self->log_info( "   - Removing genes smaller than " . $min_gene_size );
         $self->log_info("   - Removing chrM and chr*_random");
@@ -705,12 +783,11 @@ class MyApp::Cumulative_Density {
             unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ ) {
                 if ($f->size >= $min_gene_size){
                    #fix gne size
-                   $f->remove_upstream($self->tss);
-                   $f->remove_downstream($self->tts);
                    push @aux,$f;
                 }
             }
         }
+
         $self->log_info( "   - Number of genes after filter: " . scalar @aux );
         return \@aux;
     }
@@ -753,9 +830,9 @@ class MyApp::Cumulative_Density {
     }
 
     method _get_tts_genes (ArrayRef[Bio::Moose::Bed] $genes) {
-                            # Create slopBed object
-        $self->log_info("   Getting TSS ");
-        $self->log_info( "   -TSS size: " . $self->tss );
+        # Create slopBed object
+        $self->log_info("   Getting TTS ");
+        $self->log_info( "   -TTS size: " . $self->tts );
         my $flank = Bio::Moose::BedTools::Flank->new(
             i => $genes,
             g => $self->genome,
@@ -842,13 +919,13 @@ class MyApp::Cumulative_Density {
             my $key = ( $f->name * $self->bodyStep ) + $bodyStart;
 
             # Normalize reads by bin size and add to relatie bin
-            $bodyD{$key}{rpb} += $f->score / $f->size;
+            $bodyD{$key}{rpb} += ($f->score / $f->size);
             $bodyD{$key}{index} = $f->name;
         }
 
         $self->log_info("Smoothing...");
         
-        my $n_intergenic = scalar @{ $self->intergenic_bed };
+        my $n_intergenic = $self->n_intergenic_regions;
         # Normalizing by gene number * factor
         foreach my $k ( keys %bodyD ) {
             $bodyD{$k}{smooth} = $bodyD{$k}{rpb}
@@ -883,7 +960,7 @@ class MyApp::Cumulative_Density {
             my $key = ( $f->name * $self->bodyStep ) - $bodyStart;
 
             # Normalize reads by bin size and add to relatie bin
-            $bodyD{$key}{rpb} += $f->score / $f->size;
+            $bodyD{$key}{rpb} += ($f->score / $f->size);
             $bodyD{$key}{index} = $f->name;
 
             # kee Bed object for earch bin
@@ -893,9 +970,10 @@ class MyApp::Cumulative_Density {
         $self->log_info("Smoothing...");
 
         # Normalizing by gene number * factor
+        
         foreach my $k ( keys %bodyD ) {
             $bodyD{$k}{smooth} = $bodyD{$k}{rpb}
-                / ( scalar @{ $self->_filter_input } * $self->normFactor );
+                / ( $self->n_genes * $self->normFactor );
         }
         #say "$_ => $bodyD{$_}{smooth} ($bodyD{$_}{index})"
         #    for ( sort { $a <=> $b } keys %bodyD );
@@ -943,7 +1021,7 @@ class MyApp::Cumulative_Density {
             }
 
             # Normalize reads by bin size and add to relatie bin
-            $fixedD{$key}{rpb} += $f->score / $f->size;
+            $fixedD{$key}{rpb} += ($f->score / $f->size);
             $fixedD{$key}{index} = $f->name;
 
             # kee Bed object for earch bin
@@ -955,14 +1033,14 @@ class MyApp::Cumulative_Density {
         # Normalizing by gene number * factor
         foreach my $k ( keys %fixedD ) {
             $fixedD{$k}{smooth} = $fixedD{$k}{rpb}
-                / ( scalar @{ $self->_filter_input } * $self->normFactor );
+                / ( $self->n_genes  * $self->normFactor );
         }
         #say "$_ => $fixedD{$_}{smooth} ($fixedD{$_}{index})"
         #    for ( sort { $a <=> $b } keys %fixedD );
 
         return \%fixedD;
     }
-   
+
     method intersect_genes {
         # Body Density
         # =====================================================================
@@ -1029,7 +1107,7 @@ class MyApp::Cumulative_Density {
             = $self->build_fixed( $tss_antisense_genes->as_BedIO->features );
 
 
-        # Get TTS intersecton
+        # Get TSS intersecton
         my $tss_antisense_intersected = Bio::Moose::BedTools::Intersect->new(
             a => $gene_tss_antisense_bins->as_BedIO->features,
             b => $self->reads,
