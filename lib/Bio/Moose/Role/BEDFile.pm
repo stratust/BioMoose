@@ -119,7 +119,6 @@ role Bio::Moose::Role::BEDFile {
         if ( -e $string ) {
             open( my $in, '<', $string )
                 || die "Cannot open/read file " . $string . "!";
-            print $string."\n";
             return ($in);            
         }
         else {
