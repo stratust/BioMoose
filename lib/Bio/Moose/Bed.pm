@@ -26,7 +26,7 @@ class Bio::Moose::Bed {
         dependency => BiggerThan ['chromStart']
     );
     has 'name'        => ( is => 'rw', isa => 'Str' );
-    has 'score'       => ( is => 'rw', isa => 'Int' );
+    has 'score'       => ( is => 'rw', isa => 'Num' );
     has 'strand'      => ( is => 'rw', isa => 'Str' );
     has 'thickStart'  => ( is => 'rw', isa => 'Int' );
     has 'thickEnd'    => ( is => 'rw', isa => 'Int' );
@@ -42,6 +42,9 @@ class Bio::Moose::Bed {
     has 'init_pos' => ( is => 'ro', isa => 'Int', );
   
     has size => ( is => 'rw', isa => 'Int', lazy => 1, builder => 'build_size' );
+    
+    # store any information you want in this part
+    has misc => ( is => 'rw', isa => 'Any' );
 
 
     method make_windows (Int :$number_of_windows ) {
