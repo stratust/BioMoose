@@ -6,6 +6,7 @@ use Modern::Perl;
 
 class Bio::Moose::BedIO {
     with 'Bio::Moose::Role::BEDFile';
+    with 'Bio::Moose::Role::TrackI';
     use Bio::Moose::Bed;
     use IO::ScalarArray;
     use Class::MOP;
@@ -25,6 +26,14 @@ class Bio::Moose::BedIO {
         isa           => 'BEDFileO',
         coerce        => 1,
         documentation => 'Bed file to be written',
+    );
+
+    has 'track' => (
+        is            => 'ro',
+        isa           => 'TrackI',
+        required      => 0,
+        coerce        => 1,
+        documentation => 'Track Object',
     );
 
     has 'features' => (
@@ -137,6 +146,7 @@ class Bio::Moose::BedIO {
     }
 
     method write_all_features {
+        
         foreach my $f ( @{ $self->features } ) {
             $self->write($f);
         }
