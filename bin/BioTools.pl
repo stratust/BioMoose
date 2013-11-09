@@ -229,6 +229,7 @@ class MyApp::Cluster {
     use Math::CDF;
     use File::Basename;
     use Data::Dumper;
+    with 'Custom::Log';
 
     option 'input_file' => (
         is            => 'ro',
@@ -242,8 +243,22 @@ class MyApp::Cluster {
         is            => 'ro',
         isa           => 'Str',
         cmd_aliases     => [qw(g)],
-        required      => 1,
+        required      => 0,
         documentation => q[Chromosome size file],
+    );  
+
+    option 'human' => (
+        is            => 'ro',
+        isa           => 'Bool',
+        required      => 0,
+        documentation => q[Use hardcoded human genome size],
+    );  
+
+    option 'mouse' => (
+        is            => 'ro',
+        isa           => 'Bool',
+        required      => 0,
+        documentation => q[Use hardcoded mouse genome size],
     );  
 
     option 'cutoff' => (
@@ -308,8 +323,17 @@ class MyApp::Cluster {
    method _builder_genome_size {
         my $genome_size;
         # Sum chromosome size
-        $genome_size += $self->parse_genome->{$_} foreach keys %{$self->parse_genome};
-        $genome_size=2123929214;
+        if ($self->genome){
+        	$genome_size += $self->parse_genome->{$_} foreach keys %{$self->parse_genome};
+	}
+	else{
+
+        	$genome_size=2861343702 if $self->human;
+        	$genome_size=2123929214 if $self->mouse;
+	}
+        die "Select genome size" unless $genome_size;
+
+        #$self->log_info( "genome size " . $genome_size );
         return $genome_size;
    } 
 
