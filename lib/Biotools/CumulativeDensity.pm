@@ -13,7 +13,6 @@ class Biotools::CumulativeDensity {
     use Bio::Moose::BedTools::WindowMaker;
     use Moose::Util::TypeConstraints;
     use Data::Dumper;
-    with 'Custom::Log';
 
     option 'input' => (
         is            => 'rw',
@@ -246,12 +245,12 @@ class Biotools::CumulativeDensity {
     );
 
     method build_filter_input {
-        $self->log_info( "Filtering " . $self->input );
-        $self->log_info( "Increasing TSS and TTS  and removing overlap");
+        $self->log->info( "Filtering " . $self->input );
+        $self->log->info( "Increasing TSS and TTS  and removing overlap");
         # get slopped genes
         #
         my $slopped_genes = $self->_get_slopped_input->as_BedIO->features;
-        $self->log_info(
+        $self->log->info(
             "   - Number of genes before filter: " . scalar @{$slopped_genes} );
         
        
@@ -261,7 +260,7 @@ class Biotools::CumulativeDensity {
             b => $slopped_genes,
             c => 1
         );
-        $self->log_info( $gene_i_gene->show_cmd_line );
+        $self->log->info( $gene_i_gene->show_cmd_line );
         $gene_i_gene->run;
 
         my $orig_input = Bio::Moose::BedIO->new(file=>$self->input)->features;
@@ -275,30 +274,30 @@ class Biotools::CumulativeDensity {
             $i++;
         }
 
-        $self->log_info( "   - Number of genes without overlap: "
+        $self->log->info( "   - Number of genes without overlap: "
                 . scalar @genes_no_overlap );
 
         my $file;
 
         if ($self->remove_overlapping_genes){
-            $self->log_info( "      Removing overlapping genes ( --remove_overlapping_genes = 1 )" );
+            $self->log->info( "      Removing overlapping genes ( --remove_overlapping_genes = 1 )" );
             $file  = \@genes_no_overlap;
         }else{
-            $self->log_info( "      Keeping overlapping genes ( --remove_overlapping_genes = 0 )" );
+            $self->log->info( "      Keeping overlapping genes ( --remove_overlapping_genes = 0 )" );
             $file = $orig_input;
         }
 
         my $in    = Bio::Moose::BedIO->new( file => $file );
         my $feats = $in->features;
 
-        $self->log_info(
+        $self->log->info(
             "   - Number of genes before filter: " . scalar @{$feats} );
 
         my @aux;
         my $min_gene_size = ( $self->tss + $self->tts ) * 0.5 ;
 
-        $self->log_info( "   - Removing genes smaller than " . $min_gene_size );
-        $self->log_info("   - Removing chrM and chr*_random");
+        $self->log->info( "   - Removing genes smaller than " . $min_gene_size );
+        $self->log->info("   - Removing chrM and chr*_random");
 
         foreach my $f ( @{$feats} ) {
             unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ ) {
@@ -309,15 +308,15 @@ class Biotools::CumulativeDensity {
             }
         }
 
-        $self->log_info( "   - Number of genes after filter: " . scalar @aux );
+        $self->log->info( "   - Number of genes after filter: " . scalar @aux );
         return \@aux;
     }
 
     method _get_slopped_input {
         # Create slopBed object
-        $self->log_info("   Slopping ");
-        $self->log_info("   -TSS size: ".$self->tss);
-        $self->log_info("   -TTS size: ".$self->tts);
+        $self->log->info("   Slopping ");
+        $self->log->info("   -TSS size: ".$self->tss);
+        $self->log->info("   -TTS size: ".$self->tts);
         my $slop = Bio::Moose::BedTools::Slop->new(
             i => $self->input,
             g => $self->genome,
@@ -325,7 +324,7 @@ class Biotools::CumulativeDensity {
             r => $self->tts,
             s => 1,
         );
-        $self->log_info($slop->show_cmd_line);
+        $self->log->info($slop->show_cmd_line);
         # Run slopbed
         $slop->run();
         return $slop;
@@ -333,8 +332,8 @@ class Biotools::CumulativeDensity {
  
     method _get_tss_genes (ArrayRef[Bio::Moose::Bed] $genes) {
                             # Create slopBed object
-        $self->log_info("   Getting TSS ");
-        $self->log_info( "   -TSS size: " . $self->tss );
+        $self->log->info("   Getting TSS ");
+        $self->log->info( "   -TSS size: " . $self->tss );
         my $flank = Bio::Moose::BedTools::Flank->new(
             i => $genes,
             g => $self->genome,
@@ -342,7 +341,7 @@ class Biotools::CumulativeDensity {
             r => 0,
             s => 1,
         );
-        $self->log_info( $flank->show_cmd_line );
+        $self->log->info( $flank->show_cmd_line );
 
         # Run slopbed
         $flank->run();
@@ -352,8 +351,8 @@ class Biotools::CumulativeDensity {
 
     method _get_tts_genes (ArrayRef[Bio::Moose::Bed] $genes) {
         # Create slopBed object
-        $self->log_info("   Getting TTS ");
-        $self->log_info( "   -TTS size: " . $self->tts );
+        $self->log->info("   Getting TTS ");
+        $self->log->info( "   -TTS size: " . $self->tts );
         my $flank = Bio::Moose::BedTools::Flank->new(
             i => $genes,
             g => $self->genome,
@@ -361,7 +360,7 @@ class Biotools::CumulativeDensity {
             r => $self->tts,
             s => 1,
         );
-        $self->log_info( $flank->show_cmd_line );
+        $self->log->info( $flank->show_cmd_line );
 
         # Run slopbed
         $flank->run();
@@ -370,24 +369,24 @@ class Biotools::CumulativeDensity {
 
     method _get_complement_bed {
         # Prepare
-        $self->log_info("   Complement");
-        $self->log_info("   -TSS: ".$self->tss);
-        $self->log_info("   -TTS: ".$self->tts);
+        $self->log->info("   Complement");
+        $self->log->info("   -TSS: ".$self->tss);
+        $self->log->info("   -TTS: ".$self->tts);
         my $complement = Bio::Moose::BedTools::Complement->new(
             i => $self->_get_slopped_input->as_BedIO->features,
             g => $self->genome,
         );
-        $self->log_info($complement->show_cmd_line);
+        $self->log->info($complement->show_cmd_line);
         # Run complement
         $complement->run();
 
         my $feats = $complement->as_BedIO->features;
         my @aux;
 
-        $self->log_info("Filtering Intergenic regions (complement of slopped input");
+        $self->log->info("Filtering Intergenic regions (complement of slopped input");
         my $min_region_size = ( $self->tss + $self->tts ) * 0.5 ;
-        $self->log_info("   Removing regions in chrM and chr*_random");
-        $self->log_info("   Removing regions smaller than $min_region_size");
+        $self->log->info("   Removing regions in chrM and chr*_random");
+        $self->log->info("   Removing regions smaller than $min_region_size");
         foreach my $f ( @{$feats} ) {
             unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ ) {
                 if ($f->size >= $min_region_size){
@@ -399,28 +398,28 @@ class Biotools::CumulativeDensity {
     }
         
     method build_body_bins($this_input) {
-        $self->log_info("   Divide genes body in bins");
-        $self->log_info("   - body resolution : ".$self->body_resolution.' bins');
+        $self->log->info("   Divide genes body in bins");
+        $self->log->info("   - body resolution : ".$self->body_resolution.' bins');
         my $windows = Bio::Moose::BedTools::WindowMaker->new(
             b => $this_input,
             i => 'winnum',
             n => $self->body_resolution,
         );
-        $self->log_info($windows->show_cmd_line);
+        $self->log->info($windows->show_cmd_line);
         $windows->run;
         return $windows;
     }
 
     method build_fixed ($this_input) {
-        $self->log_info("   Divide in fixed bins");
-        $self->log_info("   -window size: ".$self->window_size);
+        $self->log->info("   Divide in fixed bins");
+        $self->log->info("   -window size: ".$self->window_size);
         my $windows = Bio::Moose::BedTools::WindowMaker->new(
             b => $this_input,
             w => $self->window_size,
             i => 'winnum'
             #n => $self->body_resolution,
         );
-        $self->log_info($windows->show_cmd_line);
+        $self->log->info($windows->show_cmd_line);
         $windows->run;
         return $windows;
     }
@@ -429,7 +428,7 @@ class Biotools::CumulativeDensity {
         ArrayRef[Bio::Moose::Bed] $bed_windows,
         ) {
         
-        $self->log_info("Calculating Density...");
+        $self->log->info("Calculating Density...");
         my %bodyD;
         my $bodyStart = $self->relativeCoordSize +
         ($self->tts * 1.5) - $self->bodyStep;
@@ -444,7 +443,7 @@ class Biotools::CumulativeDensity {
             $bodyD{$key}{index} = $f->name;
         }
 
-        $self->log_info("Smoothing...");
+        $self->log->info("Smoothing...");
         
         my $n_intergenic = $self->n_intergenic_regions;
         # Normalizing by gene number * factor
@@ -471,7 +470,7 @@ class Biotools::CumulativeDensity {
         my @bed_windows = (@{$bed_windows_sense},@{$bed_windows_antisense
             });
         
-        $self->log_info("Calculating Density...");
+        $self->log->info("Calculating Density...");
         my %bodyD;
         my $bodyStart = $self->bodyStep / 2;
 
@@ -488,7 +487,7 @@ class Biotools::CumulativeDensity {
             #push @{$bodyD{$key}{bed}},$f;
         }
 
-        $self->log_info("Smoothing...");
+        $self->log->info("Smoothing...");
 
         # Normalizing by gene number * factor
         
@@ -525,7 +524,7 @@ class Biotools::CumulativeDensity {
             });
 
         my %fixedD;
-        $self->log_info("Calculating Density...");
+        $self->log->info("Calculating Density...");
         foreach my $f ( @bed_windows ) {
             my $key;
 
@@ -549,7 +548,7 @@ class Biotools::CumulativeDensity {
             #push @{$fixedD{$key}{bed}},$f;
         }
 
-        $self->log_info("Smoothing...");
+        $self->log->info("Smoothing...");
 
         # Normalizing by gene number * factor
         foreach my $k ( keys %fixedD ) {
@@ -565,32 +564,32 @@ class Biotools::CumulativeDensity {
     method intersect_genes {
         # Body Density
         # =====================================================================
-        $self->log_info("Calculating gene body bins");
+        $self->log->info("Calculating gene body bins");
 
         # FOr positivve genes
-        $self->log_info(" Positive Genes");      
+        $self->log->info(" Positive Genes");      
         my $gene_body_sense_bins = $self->build_body_bins($self->sense_genes);
 
-        $self->log_info( "Intersecting Positive gene body bins with " . $self->reads );
+        $self->log->info( "Intersecting Positive gene body bins with " . $self->reads );
         my $body_sense_intersected = Bio::Moose::BedTools::Intersect->new(
             a => $gene_body_sense_bins->as_BedIO->features,
             b => $self->reads,
             c => 1
         );
-        $self->log_info($body_sense_intersected->show_cmd_line);        
+        $self->log->info($body_sense_intersected->show_cmd_line);        
         $body_sense_intersected->run;
 
         # For negative genes
-        $self->log_info(" Positive Genes");      
+        $self->log->info(" Positive Genes");      
         my $gene_body_antisense_bins = $self->build_body_bins($self->antisense_genes);
 
-        $self->log_info( "Intersecting Negative gene body bins with " . $self->reads );
+        $self->log->info( "Intersecting Negative gene body bins with " . $self->reads );
         my $body_antisense_intersected = Bio::Moose::BedTools::Intersect->new(
             a => $gene_body_antisense_bins->as_BedIO->features,
             b => $self->reads,
             c => 1
         );
-        $self->log_info($body_antisense_intersected->show_cmd_line);        
+        $self->log->info($body_antisense_intersected->show_cmd_line);        
         $body_antisense_intersected->run;
 
         # calcualte body density
@@ -601,10 +600,10 @@ class Biotools::CumulativeDensity {
  
         # TSS Density
         # =====================================================================
-        $self->log_info("Calculating TSS bins");
+        $self->log->info("Calculating TSS bins");
         
         # For positive
-        $self->log_info(
+        $self->log->info(
             "Intersecting Positive TSS bins with " . $self->reads );
         my $tss_sense_genes = $self->_get_tss_genes( $self->sense_genes );
         my $gene_tss_sense_bins
@@ -617,11 +616,11 @@ class Biotools::CumulativeDensity {
             c => 1
         );
 
-        $self->log_info( $tss_sense_intersected->show_cmd_line );
+        $self->log->info( $tss_sense_intersected->show_cmd_line );
         $tss_sense_intersected->run;
         
         # For negative
-        $self->log_info(
+        $self->log->info(
             "Intersecting Negative TSS bins with " . $self->reads );
         my $tss_antisense_genes = $self->_get_tss_genes( $self->antisense_genes );
         my $gene_tss_antisense_bins
@@ -635,7 +634,7 @@ class Biotools::CumulativeDensity {
             c => 1
         );
 
-        $self->log_info( $tss_antisense_intersected->show_cmd_line );
+        $self->log->info( $tss_antisense_intersected->show_cmd_line );
         $tss_antisense_intersected->run;
 
         my $tssD
@@ -644,10 +643,10 @@ class Biotools::CumulativeDensity {
 
         # TTS Density
         # =====================================================================
-         $self->log_info("Calculating TTS bins");
+         $self->log->info("Calculating TTS bins");
         
         # For positive
-        $self->log_info(
+        $self->log->info(
             "Intersecting Positive TTS bins with " . $self->reads );
         my $tts_sense_genes = $self->_get_tts_genes( $self->sense_genes );
         my $gene_tts_sense_bins
@@ -660,11 +659,11 @@ class Biotools::CumulativeDensity {
             c => 1
         );
 
-        $self->log_info( $tts_sense_intersected->show_cmd_line );
+        $self->log->info( $tts_sense_intersected->show_cmd_line );
         $tts_sense_intersected->run;
         
         # For negative
-        $self->log_info(
+        $self->log->info(
             "Intersecting Negative TTS bins with " . $self->reads );
         my $tts_antisense_genes = $self->_get_tts_genes( $self->antisense_genes );
         my $gene_tts_antisense_bins
@@ -677,7 +676,7 @@ class Biotools::CumulativeDensity {
             c => 1
         );
 
-        $self->log_info( $tts_antisense_intersected->show_cmd_line );
+        $self->log->info( $tts_antisense_intersected->show_cmd_line );
         $tts_antisense_intersected->run;
 
         my $ttsD
@@ -692,19 +691,19 @@ class Biotools::CumulativeDensity {
     method intersect_intergenic {
         # Body Density
         # =====================================================================
-        $self->log_info("Calculating Intergenic bins");
+        $self->log->info("Calculating Intergenic bins");
 
         # FOr positivve genes
         my $intergenic_bins =
         $self->build_body_bins($self->intergenic_bed);
 
-        $self->log_info( "Intersecting intergenic bins with " . $self->reads );
+        $self->log->info( "Intersecting intergenic bins with " . $self->reads );
         my $intergenic_intersected = Bio::Moose::BedTools::Intersect->new(
             a => $intergenic_bins->as_BedIO->features,
             b => $self->reads,
             c => 1
         );
-        $self->log_info($intergenic_intersected->show_cmd_line);        
+        $self->log->info($intergenic_intersected->show_cmd_line);        
         $intergenic_intersected->run;
 
         # calcualte body density

@@ -8,8 +8,6 @@ class Biotools::Cluster {
     use Bio::Moose::BedIO;
     use Math::CDF;
     use File::Basename;
-    use Data::Dumper;
-    with 'Custom::Log';
 
     option 'input_file' => (
         is            => 'ro',
@@ -113,7 +111,7 @@ class Biotools::Cluster {
 	}
         die "Select genome size" unless $genome_size;
 
-        #$self->log_info( "genome size " . $genome_size );
+        #$self->log->info( "genome size " . $genome_size );
         return $genome_size;
    } 
 
