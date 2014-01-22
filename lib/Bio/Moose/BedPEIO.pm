@@ -2,7 +2,7 @@
 use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+use feature qw(say);
 
 class Bio::Moose::BedPEIO {
     use Bio::Moose::BedPE;

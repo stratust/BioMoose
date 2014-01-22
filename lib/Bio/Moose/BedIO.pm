@@ -1,8 +1,6 @@
-#!/usr/bin/env perl
-use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+use feature qw(say);
 
 class Bio::Moose::BedIO {
     with 'Bio::Moose::Role::BEDFile';

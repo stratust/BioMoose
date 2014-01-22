@@ -1,8 +1,6 @@
-#!/usr/bin/env perl
-use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl '2011';
+use feature qw(say);
 
 class Bio::Moose::DependecyTypes {
     use MooseX::Attribute::Dependency;

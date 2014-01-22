@@ -1,8 +1,7 @@
 #!/usr/bin/env perl
-use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+use feature qw(say);
 
 class Bio::Moose::BedTools::Intersect {
     extends 'Bio::Moose::BedTools';

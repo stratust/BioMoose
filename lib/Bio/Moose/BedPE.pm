@@ -2,7 +2,7 @@
 use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+use feature qw(say);
 
 =cut
 Field Nbr.  Field Name  Description

@@ -2,7 +2,7 @@
 use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+use feature qw(say);
 
 =cut
 Hydra breakpoint output file format (.final and .all)

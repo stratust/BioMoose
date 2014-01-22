@@ -2,7 +2,7 @@
 use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+use feature qw(say);
 
 # Store the log_path
 our $log_path;
@@ -144,13 +144,13 @@ role Custom::Log {
     }
 }
 
-class MyApp is dirty {
+class Biotools is dirty {
     use MooseX::App qw(Color);
 }
 
-class MyApp::Bedpe2Bed12 {
+class Biotools::Bedpe2Bed12 {
     use MooseX::App::Command;            # important
-    extends qw(MyApp);                   # purely optional
+    extends qw(Biotools);                   # purely optional
     use Bio::Moose::HydraBreaksIO;
     use Data::Dumper;
 
@@ -222,9 +222,9 @@ class MyApp::Bedpe2Bed12 {
     }   
 }
 
-class MyApp::Cluster {
+class Biotools::Cluster {
     use MooseX::App::Command;            # important
-    extends qw(MyApp);                   # purely optional
+    extends qw(Biotools);                   # purely optional
     use Bio::Moose::BedIO;
     use Math::CDF;
     use File::Basename;
@@ -505,9 +505,9 @@ class MyApp::Cluster {
     }
 }
 
-class MyApp::Cumulative_Density {
+class Biotools::Cumulative_Density {
     use MooseX::App::Command;            # important
-    extends qw(MyApp);                   # purely optional
+    extends qw(Biotools);                   # purely optional
     use Bio::Moose::BedIO;
     use Bio::Moose::BedTools::Intersect;
     use Bio::Moose::BedTools::Complement;
@@ -1243,14 +1243,14 @@ class MyApp::Cumulative_Density {
 }
 
 class Main {
-    import MyApp;
-    MyApp->new_with_command->run();
+    import Biotools;
+    Biotools->new_with_command->run();
 }
 
 
 =head1 NAME 
 
-    MyApp
+    Biotools
 
 =head1 SYNOPSIS
   This application requires Perl 5.10.0 or higher   

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
-use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
+
 class Bio::Moose::BedTools {
     with 'MooseX::Role::Cmd';
     with 'Bio::Moose::Role::BEDFile';
