@@ -1,7 +1,7 @@
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
 use feature qw(say);
-BEGIN { our $Log_Level = 'info'  }
+BEGIN { $ENV{LOG_LEVEL} = 'info' unless $ENV{LOG_LEVEL}  }
 
 class Biotools is dirty {
     use MooseX::App qw(Color);
