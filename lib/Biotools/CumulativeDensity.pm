@@ -4,7 +4,7 @@ use feature qw(say);
 
 class Biotools::CumulativeDensity {
     use MooseX::App::Command;            # important
-    extends qw(Biotools);                   # purely optional
+    extends qw(Biotools);                
     use Bio::Moose::BedIO;
     use Bio::Moose::BedTools::Intersect;
     use Bio::Moose::BedTools::Complement;
@@ -12,7 +12,17 @@ class Biotools::CumulativeDensity {
     use Bio::Moose::BedTools::Flank;
     use Bio::Moose::BedTools::WindowMaker;
     use Moose::Util::TypeConstraints;
-    use Data::Dumper;
+    use File::Temp;
+    use File::Basename;
+    use File::Copy;
+    use File::Path qw(make_path rmtree);
+    use AnyEvent;
+    use AnyEvent::ForkManager;
+    use Progress::Any::Output;
+    use Sys::CPU;
+
+    Progress::Any::Output->set('TermProgressBarColor');
+ 
 
     option 'input' => (
         is            => 'rw',
@@ -92,6 +102,15 @@ class Biotools::CumulativeDensity {
         documentation => q[Only analyse genes with reads],
     );
 
+    option 'n_forks' => (
+        is            => 'rw',
+        isa           => 'Str',
+        cmd_aliases   => 'n',
+        required      => 1,
+        default       => 1,
+        documentation => q[Number of forks to use],
+    );
+
     has '_filter_input' => (
         is            => 'rw',
         isa           => 'ArrayRef[Bio::Moose::Bed]',
@@ -150,110 +169,48 @@ class Biotools::CumulativeDensity {
         documentation => 'Keep body step size',
     );
     
-    has '_reads' => (
+    has 'n_reads' => (
         is            => 'rw',
-        isa           => 'ArrayRef[Bio::Moose::Bed]',
+        isa           => 'Int',
         lazy      => 1,
         default => sub {
             my ($self) = @_;
-            my $feats = Bio::Moose::BedIO->new(file=>$self->reads)->features;
-            my @aux;
-            foreach my $f (@{$feats}) {
-                push @aux, $f unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ );
+            open( my $in, '<', $self->reads ) 
+                || die "Cannot open/read file " . $self->reads . "!";
+            my $n_reads=0;
+            while ( my $row = <$in> ){
+               $n_reads++  unless ($row =~ /chrM/i || $row =~ /random/i )
             }
-            return \@aux;
+            close( $in );
+
+            return $n_reads;    
         },
         documentation => 'Read object',
     );
-    
+   
     has 'normFactor' => (
         is      => 'rw',
         isa     => 'Num',
         lazy    => 1,
         default => sub {
             my ($self) = @_;
-            my $normfactor = (1e6 / scalar @{ $self->_reads });
+            my $normfactor = (1e6 / $self->n_reads );
             return $normfactor;
         },
         documentation => 'Normalize by this factor',
     );
 
-    has 'n_genes' => (
-        is            => 'rw',
-        isa           => 'Int',
-        lazy => 1,
-        default => sub{
-            my ($self) = @_;
-            my $n_gene=0;
-            if ( $self->only_genes_with_reads ) {
-                my $slop = Bio::Moose::BedTools::Slop->new(
-                    i => $self->_filter_input,
-                    g => $self->genome,
-                    l => $self->tss,
-                    r => $self->tts,
-                    s => 1,
-                );
-
-                # Run slopbed
-                $slop->run();
-
-                my $intersect = Bio::Moose::BedTools::Intersect->new(
-                    a => $slop->as_BedIO->features,
-                    b => $self->_reads,
-                    u => 1,
-                );
-                $intersect->run;
-
-                $n_gene = scalar @{ $intersect->as_BedIO->features };
-            }
-            else {
-                $n_gene = scalar @{ $self->_filter_input };
-            }
-            return $n_gene;
-        }
-    );
-
-    has 'n_intergenic_regions' => (
-        is            => 'rw',
-        isa           => 'Int',
-        lazy => 1,
-        default => sub{
-            my ($self) = @_;
-            my $n_region = 0;
-            if ( $self->only_genes_with_reads ) {
-                my $intersect = Bio::Moose::BedTools::Intersect->new(
-                    a => $self->intergenic_bed,
-                    b => $self->_reads,
-                    u => 1,
-                );
-                $intersect->run;
-                $n_region = scalar @{ $intersect->as_BedIO->features };
-            }
-            else {
-                $n_region=scalar @{ $self->intergenic_bed };                
-            }
-            return $n_region;
-        }
-    );
-
-    
-    has 'intergenic_bed' => (
-        is            => 'rw',
-        isa           => 'ArrayRef[Bio::Moose::Bed]',
-        lazy      => 1,
-        builder => '_get_complement_bed',
-    );
 
     method build_filter_input {
         $self->log->info( "Filtering " . $self->input );
         $self->log->info( "Increasing TSS and TTS  and removing overlap");
-        # get slopped genes
-        #
-        my $slopped_genes = $self->_get_slopped_input->as_BedIO->features;
-        $self->log->info(
-            "   - Number of genes before filter: " . scalar @{$slopped_genes} );
         
-       
+        # get slopped genes
+        my $slopped_genes = $self->_get_slopped_input->stdout;
+        my @slop = split "\n", $slopped_genes->[0];
+        $self->log->info(
+            "   - Number of genes before filter: " . scalar @slop );
+        
         # intersect genes and remove genes with more than 1 intersection
         my $gene_i_gene = Bio::Moose::BedTools::Intersect->new(
             a => $slopped_genes,
@@ -302,7 +259,7 @@ class Biotools::CumulativeDensity {
         foreach my $f ( @{$feats} ) {
             unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ ) {
                 if ($f->size >= $min_gene_size){
-                   #fix gne size
+                   #fix gene size
                    push @aux,$f;
                 }
             }
@@ -311,6 +268,7 @@ class Biotools::CumulativeDensity {
         $self->log->info( "   - Number of genes after filter: " . scalar @aux );
         return \@aux;
     }
+
 
     method _get_slopped_input {
         # Create slopBed object
@@ -330,10 +288,12 @@ class Biotools::CumulativeDensity {
         return $slop;
     }
  
-    method _get_tss_genes (ArrayRef[Bio::Moose::Bed] $genes) {
-                            # Create slopBed object
-        $self->log->info("   Getting TSS ");
-        $self->log->info( "   -TSS size: " . $self->tss );
+
+=cut
+    method _get_tss_genes (ArrayRef[Bio::Moose::Bed]|Bio::Moose::Bed $genes) {
+        # Create slopBed object
+        $self->log->trace("   Getting TSS ");
+        $self->log->trace( "   -TSS size: " . $self->tss );
         my $flank = Bio::Moose::BedTools::Flank->new(
             i => $genes,
             g => $self->genome,
@@ -341,18 +301,24 @@ class Biotools::CumulativeDensity {
             r => 0,
             s => 1,
         );
-        $self->log->info( $flank->show_cmd_line );
+        $self->log->trace( $flank->show_cmd_line );
 
         # Run slopbed
         $flank->run();
 
+        # if there is a temporary file, remove it
+        if ( -e $flank->i ){
+            unlink $flank->i;
+        }
+
         return $flank;
     }
 
-    method _get_tts_genes (ArrayRef[Bio::Moose::Bed] $genes) {
+
+    method _get_tts_genes (ArrayRef[Bio::Moose::Bed]|Bio::Moose::Bed $genes) {
         # Create slopBed object
-        $self->log->info("   Getting TTS ");
-        $self->log->info( "   -TTS size: " . $self->tts );
+        $self->log->trace("   Getting TTS ");
+        $self->log->trace( "   -TTS size: " . $self->tts );
         my $flank = Bio::Moose::BedTools::Flank->new(
             i => $genes,
             g => $self->genome,
@@ -360,380 +326,415 @@ class Biotools::CumulativeDensity {
             r => $self->tts,
             s => 1,
         );
-        $self->log->info( $flank->show_cmd_line );
+        $self->log->trace( $flank->show_cmd_line );
 
         # Run slopbed
         $flank->run();
+
+        # if there is a temporary file, remove it
+        if ( -e $flank->i ){
+            unlink $flank->i;
+        }
+
         return $flank;
     }
 
-    method _get_complement_bed {
-        # Prepare
-        $self->log->info("   Complement");
-        $self->log->info("   -TSS: ".$self->tss);
-        $self->log->info("   -TTS: ".$self->tts);
-        my $complement = Bio::Moose::BedTools::Complement->new(
-            i => $self->_get_slopped_input->as_BedIO->features,
-            g => $self->genome,
-        );
-        $self->log->info($complement->show_cmd_line);
-        # Run complement
-        $complement->run();
-
-        my $feats = $complement->as_BedIO->features;
-        my @aux;
-
-        $self->log->info("Filtering Intergenic regions (complement of slopped input");
-        my $min_region_size = ( $self->tss + $self->tts ) * 0.5 ;
-        $self->log->info("   Removing regions in chrM and chr*_random");
-        $self->log->info("   Removing regions smaller than $min_region_size");
-        foreach my $f ( @{$feats} ) {
-            unless ( $f->chrom =~ /chrM/ || $f->chrom =~ /random/ ) {
-                if ($f->size >= $min_region_size){
-                   push @aux,$f;
-                }
-            }
-        }
-        return \@aux; 
-    }
         
     method build_body_bins($this_input) {
-        $self->log->info("   Divide genes body in bins");
-        $self->log->info("   - body resolution : ".$self->body_resolution.' bins');
+        $self->log->trace("   Divide genes body in bins");
+        $self->log->trace("   - body resolution : ".$self->body_resolution.' bins');
         my $windows = Bio::Moose::BedTools::WindowMaker->new(
             b => $this_input,
             i => 'winnum',
             n => $self->body_resolution,
         );
-        $self->log->info($windows->show_cmd_line);
+        $self->log->trace($windows->show_cmd_line);
         $windows->run;
+
+        # if there is a temporary file, remove it
+        if ( -e $windows->b ){
+            unlink $windows->b;
+        }
+
         return $windows;
     }
 
-    method build_fixed ($this_input) {
-        $self->log->info("   Divide in fixed bins");
-        $self->log->info("   -window size: ".$self->window_size);
+
+    method intersect_bins ($this_input) {
+        my $intersect = Bio::Moose::BedTools::Intersect->new(
+            a => $this_input,
+            b => $self->reads,
+            c => 1
+        );
+
+        $intersect->run;
+
+        # Removing temporary bed file
+        unlink $intersect->a if -e $intersect->a;
+        return $intersect;
+    }
+
+
+    method build_fixed_bins ($this_input) {
+        $self->log->trace("   Divide in fixed bins");
+        $self->log->trace("   -window size: ".$self->window_size);
         my $windows = Bio::Moose::BedTools::WindowMaker->new(
             b => $this_input,
             w => $self->window_size,
             i => 'winnum'
             #n => $self->body_resolution,
         );
-        $self->log->info($windows->show_cmd_line);
+        $self->log->trace($windows->show_cmd_line);
         $windows->run;
+        # if there is a temporary file, remove it
+        if ( -e $windows->b ){
+            unlink $windows->b;
+        }
         return $windows;
     }
+=cut
+=cut
+    method process_gene (Object $pm, Bio::Moose::Bed $gene_interval, Int $i, Str $tmp_dir, Str $strand) {
+        # FOR BODY
+        # creating bins
+        my $windows_body   = $self->build_body_bins($gene_interval)->stdout;
+        my $intersect_body = $self->intersect_bins($windows_body);
 
-    method get_intergenicD (
-        ArrayRef[Bio::Moose::Bed] $bed_windows,
-        ) {
-        
-        $self->log->info("Calculating Density...");
-        my %bodyD;
-        my $bodyStart = $self->relativeCoordSize +
-        ($self->tts * 1.5) - $self->bodyStep;
+        my $output = "$tmp_dir/$strand/body/" . $gene_interval->name . '_' . $i . '.bed';
+        open( my $out, '>', $output )
+            || die "Cannot open/read file " . $output . "!";
+        print $out @{ $intersect_body->stdout };
+        close($out);
 
-        foreach my $f ( @{$bed_windows} ) {
+        # FOR TSS
+        # Create slopBed object
+        my $tss           = $self->_get_tss_genes($gene_interval);
+        my $windows_tss   = $self->build_fixed_bins( $tss->stdout )->stdout;
+        my $intersect_tss = $self->intersect_bins($windows_tss);
 
-            # Index by relative position
-            my $key = ( $f->name * $self->bodyStep ) + $bodyStart;
+        $output = "$tmp_dir/$strand/tss/" . $gene_interval->name . '_' . $i . '.bed';
+        open( $out, '>', $output )
+            || die "Cannot open/read file " . $output . "!";
 
-            # Normalize reads by bin size and add to relatie bin
-            $bodyD{$key}{rpb} += ($f->score / $f->size);
-            $bodyD{$key}{index} = $f->name;
+        print $out @{ $intersect_tss->stdout };
+        close($out);
+
+        # FOR TSS
+        # Create slopBed object
+        my $tts           = $self->_get_tts_genes($gene_interval);
+        my $windows_tts   = $self->build_fixed_bins( $tts->stdout )->stdout;
+        my $intersect_tts = $self->intersect_bins($windows_tts);
+
+        $output = "$tmp_dir/$strand/tts/" . $gene_interval->name . '_' . $i . '.bed';
+        open( $out, '>', $output )
+            || die "Cannot open/read file " . $output . "!";
+
+        print $out @{ $intersect_tts->stdout };
+        close($out);
+    }
+=cut    
+
+
+    method process_gene_paralell (Object $pm, Bio::Moose::Bed $gene_interval, Int $i, Str $tmp_dir, Str $strand) {
+        srand($i);
+        # FOR BODY
+        # creating bins
+        my $windows = Bio::Moose::BedTools::WindowMaker->new(
+            b => $gene_interval,
+            i => 'winnum',
+            n => $self->body_resolution,
+        );
+        $windows->run;
+
+        # if there is a temporary file, remove it
+        if ( -e $windows->b ) {
+            unlink $windows->b;
         }
 
-        $self->log->info("Smoothing...");
-        
-        my $n_intergenic = $self->n_intergenic_regions;
-        # Normalizing by gene number * factor
-        foreach my $k ( keys %bodyD ) {
-            $bodyD{$k}{smooth} = ($bodyD{$k}{rpb}
-                / $n_intergenic)  * $self->normFactor;
-        }
-        #say "$_ => $bodyD{$_}{smooth} ($bodyD{$_}{index})"
-        #    for ( sort { $a <=> $b } keys %bodyD );
+        my $windows_body = $windows->stdout;
+        my $intersect    = Bio::Moose::BedTools::Intersect->new(
+            a => $windows_body,
+            b => $self->reads,
+            c => 1,
+            sorted => 1,
+        );
 
-        return \%bodyD;
+        $intersect->run;
+
+        # Removing temporary bed file
+        unlink $intersect->a if -e $intersect->a;
+
+        my $intersect_body = $intersect;
+
+        my $output = "$tmp_dir/$strand/body/" . $gene_interval->name . '_' . $i . '.bed';
+        open( my $out, '>', $output )
+            || die "Cannot open/read file " . $output . "!";
+        print $out @{ $intersect_body->stdout };
+        close($out);
+
+        # FOR TSS
+        # Create slopBed object
+        my $flank = Bio::Moose::BedTools::Flank->new(
+            i => $gene_interval,
+            g => $self->genome,
+            l => $self->tss,
+            r => 0,
+            s => 1,
+        );
+
+        # Run slopbed
+        $flank->run();
+
+        # if there is a temporary file, remove it
+        if ( -e $flank->i ) {
+            unlink $flank->i;
+        }
+        my $tss = $flank;
+
+        $windows = Bio::Moose::BedTools::WindowMaker->new(
+            b => $tss->stdout,
+            w => $self->window_size,
+            i => 'winnum'
+
+                #n => $self->body_resolution,
+        );
+
+        $windows->run;
+
+        # if there is a temporary file, remove it
+        if ( -e $windows->b ) {
+            unlink $windows->b;
+        }
+        my $windows_tss = $windows->stdout;
+        $intersect = Bio::Moose::BedTools::Intersect->new(
+            a => $windows_tss,
+            b => $self->reads,
+            c => 1,
+            sorted => 1,
+        );
+
+        $intersect->run;
+
+        # Removing temporary bed file
+        unlink $intersect->a if -e $intersect->a;
+
+        my $intersect_tss = $intersect;
+
+        $output = "$tmp_dir/$strand/tss/" . $gene_interval->name . '_' . $i . '.bed';
+        open( $out, '>', $output )
+            || die "Cannot open/read file " . $output . "!";
+
+        print $out @{ $intersect_tss->stdout };
+        close($out);
+
+        # FOR TTS
+        # Create slopBed object
+        $flank = Bio::Moose::BedTools::Flank->new(
+            i => $gene_interval,
+            g => $self->genome,
+            l => 0,
+            r => $self->tts,
+            s => 1,
+        );
+        $self->log->trace( $flank->show_cmd_line );
+
+        # Run slopbed
+        $flank->run();
+
+        # if there is a temporary file, remove it
+        if ( -e $flank->i ) {
+            unlink $flank->i;
+        }
+
+        my $tts = $flank;
+
+        $windows = Bio::Moose::BedTools::WindowMaker->new(
+            b => $tts->stdout,
+            w => $self->window_size,
+            i => 'winnum'
+
+                #n => $self->body_resolution,
+        );
+
+        $windows->run;
+
+        # if there is a temporary file, remove it
+        if ( -e $windows->b ) {
+            unlink $windows->b;
+        }
+        my $windows_tts = $windows->stdout;
+        $intersect = Bio::Moose::BedTools::Intersect->new(
+            a => $windows_tts,
+            b => $self->reads,
+            c => 1,
+            sorted => 1,
+        );
+
+        $intersect->run;
+
+        # Removing temporary bed file
+        unlink $intersect->a if -e $intersect->a;
+
+        my $intersect_tts = $intersect;
+
+        $output = "$tmp_dir/$strand/tts/" . $gene_interval->name . '_' . $i . '.bed';
+        open( $out, '>', $output )
+            || die "Cannot open/read file " . $output . "!";
+
+        print $out @{ $intersect_tts->stdout };
+        close($out);
     }
 
-    method get_bodyD (
-        ArrayRef[Bio::Moose::Bed] $bed_windows_sense,
-        ArrayRef[Bio::Moose::Bed] $bed_windows_antisense
-        ) {
 
-        # Reverse bins in antisense array
-        foreach my $f ( @{ $bed_windows_antisense } ) {
-            $f->name($self->body_resolution - $f->name + 1);
-        }
-        # Combine sense and antisense
-        my @bed_windows = (@{$bed_windows_sense},@{$bed_windows_antisense
-            });
-        
-        $self->log->info("Calculating Density...");
-        my %bodyD;
-        my $bodyStart = $self->bodyStep / 2;
+    method merge_files ($tmp_dir) {
+        open( my $out, '>', $self->output_file . '_long' )
+            || die "Cannot open/write file " . $self->output_file . "_long !";
+        open( my $out_smooth, '>', $self->output_file )
+            || die "Cannot open/write file " . $self->output_file . "!";
 
-        foreach my $f ( @bed_windows ) {
+        my $n_genes        = 0;
+        my $n_genes_signal = 0;
+        my @sum_genes;
 
-            # Index by relative position
-            my $key = ( $f->name * $self->bodyStep ) - $bodyStart;
+        foreach my $strand (qw/positive negative/) {
 
-            # Normalize reads by bin size and add to relatie bin
-            $bodyD{$key}{rpb} += ($f->score / $f->size);
-            $bodyD{$key}{index} = $f->name;
+            my $tss_dir  = "$tmp_dir/$strand/tss/";
+            my $body_dir = "$tmp_dir/$strand/body";
+            my $tts_dir  = "$tmp_dir/$strand/tts";
+            my @dirs     = ( $tss_dir, $body_dir, $tts_dir );
 
-            # kee Bed object for earch bin
-            #push @{$bodyD{$key}{bed}},$f;
-        }
+            opendir( my $TSS, $tss_dir ) or die $!;
+            my %genes;
+            while ( my $filename = readdir($TSS) ) {
+                next if $filename !~ /\.bed/;
+                if ( -e "$body_dir/$filename" && -e "$tts_dir/$filename" ) {
+                    my @aux_gene;
+                    my $signal = 0;
+                    foreach my $dir (@dirs) {
 
-        $self->log->info("Smoothing...");
+                        open( my $in, '<', $dir . '/' . $filename )
+                            || die "Cannot open/read file " . $dir . '/' . $filename . "!";
 
-        # Normalizing by gene number * factor
-        
-        foreach my $k ( keys %bodyD ) {
-            $bodyD{$k}{smooth} = ($bodyD{$k}{rpb}
-                / $self->n_genes) * $self->normFactor ;
-        }
-        #say "$_ => $bodyD{$_}{smooth} ($bodyD{$_}{index})"
-        #    for ( sort { $a <=> $b } keys %bodyD );
+                        my @aux_region;
+                        while ( my $row = <$in> ) {
+                            chomp $row;
 
-        return \%bodyD;
-    }
+                            # cols: chr start end bin_num count
+                            my ( $chr, $start, $end, $bin, $count ) = split /\t/, $row;
 
-    method get_fixedD (
-     ArrayRef[Bio::Moose::Bed] $bed_windows_sense, 
-     ArrayRef[Bio::Moose::Bed] $bed_windows_antisense, 
-     Str $region) {
+                            # Normalize count by bin size and library size
+                            my $size = $end - $start;
+                            $size = 1 if $size < 1;
 
-        my $nbin = 0;
-        if ( $region =~ /tss/i ) {
-            $nbin = int( $self->tss / $self->window_size );
-        }
-        elsif ( $region =~ /tts/i ) {
+                            push @aux_region, ( ( $count / $size ) * $self->normFactor );
 
-            $nbin = int( $self->tts / $self->window_size );
-        }
+                            $signal++ if $count > 0;
+                        }
+                        close($in);
+                        @aux_region = reverse(@aux_region) if $strand =~ /negative/;
+                        push @aux_gene, @aux_region;
+                    }
 
-        # Reverse bins in antisense array
-        foreach my $f ( @{ $bed_windows_antisense } ) {
-            $f->name($nbin - $f->name + 1);
-        }
-        # Combine sense and antisense
-        my @bed_windows = (@{$bed_windows_sense},@{$bed_windows_antisense
-            });
+                    # Add tss,body,tts array of bins to gene hash
+                    say $out join "\t", ( $filename, @aux_gene );
+                    my $i = 0;
+                    foreach my $value (@aux_gene) {
+                        $sum_genes[$i] += $value;
+                        $i++;
+                    }
 
-        my %fixedD;
-        $self->log->info("Calculating Density...");
-        foreach my $f ( @bed_windows ) {
-            my $key;
-
-            # Index by relative position (name holds bin number)
-            if ( $region =~ /tts/i ) {
-                $key
-                    = ( $f->name * $self->window_size )
-                    - ( $self->window_size / 2 )
-                    + $self->relativeCoordSize;
+                    $n_genes++;
+                    $n_genes_signal++ if $signal;
+                }
+                else {
+                    $self->log->error("Cannot find all files for $filename");
+                }
             }
-            elsif ( $region =~ /tss/i ) {
-                $key = ( -1 * abs( $self->tss ) )
-                    + ( ( $f->name * $self->window_size ) );
-            }
+        }
+        close($out);
 
-            # Normalize reads by bin size and add to relatie bin
-            $fixedD{$key}{rpb} += ($f->score / $f->size);
-            $fixedD{$key}{index} = $f->name;
-
-            # kee Bed object for earch bin
-            #push @{$fixedD{$key}{bed}},$f;
+        # normalize by library size perl million and number of genes
+        foreach my $value (@sum_genes) {
+            $value = ( $value / $n_genes );
         }
 
-        $self->log->info("Smoothing...");
+        say $out_smooth join "\t", ( 'bin', ( 1 .. ( scalar @sum_genes ) ) );
+        say $out_smooth join "\t", ( 'smooth', @sum_genes );
 
-        # Normalizing by gene number * factor
-        foreach my $k ( keys %fixedD ) {
-            $fixedD{$k}{smooth} = ($fixedD{$k}{rpb}
-                / $self->n_genes)  * $self->normFactor ;
-        }
-        #say "$_ => $fixedD{$_}{smooth} ($fixedD{$_}{index})"
-        #    for ( sort { $a <=> $b } keys %fixedD );
-
-        return \%fixedD;
     }
 
-    method intersect_genes {
-        # Body Density
-        # =====================================================================
-        $self->log->info("Calculating gene body bins");
 
-        # FOr positivve genes
-        $self->log->info(" Positive Genes");      
-        my $gene_body_sense_bins = $self->build_body_bins($self->sense_genes);
-
-        $self->log->info( "Intersecting Positive gene body bins with " . $self->reads );
-        my $body_sense_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $gene_body_sense_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-        $self->log->info($body_sense_intersected->show_cmd_line);        
-        $body_sense_intersected->run;
-
-        # For negative genes
-        $self->log->info(" Positive Genes");      
-        my $gene_body_antisense_bins = $self->build_body_bins($self->antisense_genes);
-
-        $self->log->info( "Intersecting Negative gene body bins with " . $self->reads );
-        my $body_antisense_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $gene_body_antisense_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-        $self->log->info($body_antisense_intersected->show_cmd_line);        
-        $body_antisense_intersected->run;
-
-        # calcualte body density
-        my $bodyD = $self->get_bodyD( 
-            $body_sense_intersected->as_BedIO->features,
-            $body_antisense_intersected->as_BedIO->features 
-        );
- 
-        # TSS Density
-        # =====================================================================
-        $self->log->info("Calculating TSS bins");
-        
-        # For positive
-        $self->log->info(
-            "Intersecting Positive TSS bins with " . $self->reads );
-        my $tss_sense_genes = $self->_get_tss_genes( $self->sense_genes );
-        my $gene_tss_sense_bins
-            = $self->build_fixed( $tss_sense_genes->as_BedIO->features );
-
-        # Get TTS intersecton
-        my $tss_sense_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $gene_tss_sense_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-
-        $self->log->info( $tss_sense_intersected->show_cmd_line );
-        $tss_sense_intersected->run;
-        
-        # For negative
-        $self->log->info(
-            "Intersecting Negative TSS bins with " . $self->reads );
-        my $tss_antisense_genes = $self->_get_tss_genes( $self->antisense_genes );
-        my $gene_tss_antisense_bins
-            = $self->build_fixed( $tss_antisense_genes->as_BedIO->features );
-
-
-        # Get TSS intersecton
-        my $tss_antisense_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $gene_tss_antisense_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-
-        $self->log->info( $tss_antisense_intersected->show_cmd_line );
-        $tss_antisense_intersected->run;
-
-        my $tssD
-            = $self->get_fixedD( $tss_sense_intersected->as_BedIO->features,
-            $tss_antisense_intersected->as_BedIO->features, 'TSS' );
-
-        # TTS Density
-        # =====================================================================
-         $self->log->info("Calculating TTS bins");
-        
-        # For positive
-        $self->log->info(
-            "Intersecting Positive TTS bins with " . $self->reads );
-        my $tts_sense_genes = $self->_get_tts_genes( $self->sense_genes );
-        my $gene_tts_sense_bins
-            = $self->build_fixed( $tts_sense_genes->as_BedIO->features );
-
-        # Get TTS intersecton
-        my $tts_sense_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $gene_tts_sense_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-
-        $self->log->info( $tts_sense_intersected->show_cmd_line );
-        $tts_sense_intersected->run;
-        
-        # For negative
-        $self->log->info(
-            "Intersecting Negative TTS bins with " . $self->reads );
-        my $tts_antisense_genes = $self->_get_tts_genes( $self->antisense_genes );
-        my $gene_tts_antisense_bins
-            = $self->build_fixed( $tts_antisense_genes->as_BedIO->features );
-
-        # Get TTS intersecton
-        my $tts_antisense_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $gene_tts_antisense_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-
-        $self->log->info( $tts_antisense_intersected->show_cmd_line );
-        $tts_antisense_intersected->run;
-
-        my $ttsD
-            = $self->get_fixedD( $tts_sense_intersected->as_BedIO->features,
-            $tts_antisense_intersected->as_BedIO->features, 'TTS' );
-     
-        # create hash with density
-        my %geneD = (%{$tssD}, %{$bodyD}, %{$ttsD});
-        return \%geneD;
-    }
-    
-    method intersect_intergenic {
-        # Body Density
-        # =====================================================================
-        $self->log->info("Calculating Intergenic bins");
-
-        # FOr positivve genes
-        my $intergenic_bins =
-        $self->build_body_bins($self->intergenic_bed);
-
-        $self->log->info( "Intersecting intergenic bins with " . $self->reads );
-        my $intergenic_intersected = Bio::Moose::BedTools::Intersect->new(
-            a => $intergenic_bins->as_BedIO->features,
-            b => $self->reads,
-            c => 1
-        );
-        $self->log->info($intergenic_intersected->show_cmd_line);        
-        $intergenic_intersected->run;
-
-        # calcualte body density
-        my $intergenicD = $self->get_intergenicD( 
-            $intergenic_intersected->as_BedIO->features,
-        );
-
-        return $intergenicD;
-    }
- 
     method run {
-        my $geneD_file = $self->output_file . '.gene';
-        open( my $out, '>', $geneD_file )
-            || die "Cannot open/write file " . $geneD_file . "!";
-        
-        my $geneD = $self->intersect_genes;
-        foreach my $pos (sort {$a <=> $b} keys %{ $geneD }) {
-            say $out join "\t", ($pos, $geneD->{$pos}->{smooth});
+        # Params
+        my $MAX_WORKERS = 1;
+        my $p_n         = Sys::CPU::cpu_count();
+        if ( $self->n_forks > $p_n ) {
+            $MAX_WORKERS = $p_n;
         }
-        close( $out );
-
-        my $intergenicD_file = $self->output_file . '.intergenic';
-        open( $out, '>', $intergenicD_file )
-            || die "Cannot open/write file " . $intergenicD_file . "!";
-        
-        my $intergenicD = $self->intersect_intergenic;
-        foreach my $pos (sort {$a <=> $b} keys %{ $intergenicD }) {
-            say $out join "\t", ($pos, $intergenicD->{$pos}->{smooth});
+        else {
+            $MAX_WORKERS = $self->n_forks;
         }
-        close( $out );
 
+        $self->log->info( "Using: " . $MAX_WORKERS . " workers!" );
+
+        # Get filtered genes
+        my $filtered_genes = $self->_filter_input;
+
+        # Creating simulation count array
+        my @genes = ( 1 .. scalar @{$filtered_genes} );
+
+        my $tmp = File::Temp->new();
+        my $tmp_dir = $tmp->newdir( DIR => '/dev/shm', CLEANUP => 1 )->dirname;
+
+        $self->log->info("Using $tmp_dir as temporary directory for all files");
+        foreach (qw/body tss tts/) {
+            make_path( $tmp_dir . '/positive/' . $_ ) || die "Cannot create $_";
+            make_path( $tmp_dir . '/negative/' . $_ ) || die "Cannot create $_";
+        }
+
+        my $progress = Progress::Any->get_indicator(
+            task   => "coverage",
+            target => ~~ @genes
+        );
+
+        my $pm = AnyEvent::ForkManager->new(
+            max_workers => $MAX_WORKERS,
+            on_start    => sub {
+                my ( $pm, $pid, $gene_interval, $i, $tmp_dir, $strand ) = @_;
+                $progress->update( message => "gene: $i" );
+            },
+            on_finish => sub {
+                my ( $pm, $pid, $status, $gene_interval, $i, $tmp_dir, $strand ) = @_;
+            }
+        );
+
+        my $i = 1;
+        foreach my $gene_interval ( @{$filtered_genes} ) {
+            my $strand = 'positive';
+            $strand = 'negative' if $gene_interval->strand eq '-';
+
+            $pm->start(
+                cb => sub { $self->process_gene_paralell(@_) },
+                args => [ $gene_interval, $i, $tmp_dir, $strand ]
+            );
+
+            $i++;
+        }
+
+        my $cv = AnyEvent->condvar;
+
+        # wait with non-blocking
+        $pm->wait_all_children(
+            cb => sub {
+                my ($pm) = @_;
+                say $tmp_dir;
+                $self->merge_files($tmp_dir);
+                rmtree($tmp_dir);
+                $cv->send;
+            }
+        );
+
+        $cv->recv;
     }
+
 }
