@@ -128,5 +128,10 @@ class Bio::Moose::BedTools {
         return ( Bio::Moose::BedIO->new( file => $self->stdout ) );
     }
 
+    method as_file(:$path,:$filename ) {
+        
+        return ( Bio::Moose::BedIO->new( file => $self->stdout ) );
+    }
+
 
 }
