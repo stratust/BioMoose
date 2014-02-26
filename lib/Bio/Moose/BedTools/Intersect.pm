@@ -17,5 +17,13 @@ class Bio::Moose::BedTools::Intersect {
         cmdopt_prefix => '-',
         documentation => 'Add a count column',
     );
-    
+ 
+    has 'sorted' => (
+        is            => 'rw',
+        isa           => 'Bool',
+        traits        => ['CmdOpt'],
+        cmdopt_prefix => '-',
+        documentation => 'Add a count column',
+    );
+   
 }
