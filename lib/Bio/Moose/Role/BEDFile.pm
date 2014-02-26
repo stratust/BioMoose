@@ -44,7 +44,6 @@ http://www.gnu.org/copyleft/gpl.html
 
 =cut
 
-use Moose;
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
 
@@ -54,6 +53,9 @@ role Bio::Moose::Role::BEDFile {
     use IO::ScalarArray;
     use IO::Scalar;
     
+    our $DIR='/dev/shm';
+    #our $DIR='/tmp';
+
     subtype 'BEDFile'
         => as 'Str'
         => where { -e $_ };
@@ -63,7 +65,7 @@ role Bio::Moose::Role::BEDFile {
         => via {_set_input_bed($_)};
 
     coerce 'BEDFile' 
-        => from 'ArrayRef[Bio::Moose::Bed]' 
+        => from 'ArrayRef[Bio::Moose::Bed]|Bio::Moose::Bed' 
         => via {_set_input_bed_arrayobj($_)};
 
     coerce 'BEDFile' 
@@ -77,20 +79,25 @@ role Bio::Moose::Role::BEDFile {
     sub _set_input_bed {
         my $value = shift;
         $tmpi++;
-        $tmp->{$tmpi} = File::Temp->new( UNLINK => 1, SUFFIX => '.bed' );
+        $tmp->{$tmpi} = File::Temp->new( UNLINK => 1, SUFFIX => '.bed', DIR => $DIR, TEMPLATE => "temp_type1".$$."XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" );
         my $out = $tmp->{$tmpi};
         print $out @{$value};
+
+        close($out); #always close filehandle
+        
         return $out->filename;
     }
 
     sub _set_input_bed_arrayobj {
         my $value = shift;
         $tmpi++;
-        $tmp->{$tmpi} = File::Temp->new( UNLINK => 1, SUFFIX => '.bed' );
+        $tmp->{$tmpi} = File::Temp->new( UNLINK => 1, SUFFIX => '.bed',  DIR => $DIR, TEMPLATE => "temp_type2".$$."XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" );
         my $out = $tmp->{$tmpi};
+        $value = [$value] if ref($value) eq 'Bio::Moose::Bed';
         foreach my $r (@{$value}) {
             print $out $r->row;
         }
+        close($out); # always close file handle
         return $out->filename;
     }
 
