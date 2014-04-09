@@ -121,6 +121,9 @@ role Bio::Moose::Role::BEDFile {
         => from 'Str' 
         => via { _set_input_bedI_str($_) };
 
+    class_type 'Path::Class::File';
+    coerce 'BEDFileI' => from 'Path::Class::File' => via { _set_input_bedI_str($_) };
+
     sub _set_input_bedI_str {
         my $string = shift;
         if ( -e $string ) {
