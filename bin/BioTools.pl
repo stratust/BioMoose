@@ -1,8 +1,9 @@
 #!/usr/bin/env perl
 use Moose;
+use feature qw(say);
 use MooseX::Declare;
 use Method::Signatures::Modifiers;
-use Modern::Perl;
+
 
 # Store the log_path
 our $log_path;
@@ -152,7 +153,6 @@ class MyApp::Bedpe2Bed12 {
     use MooseX::App::Command;            # important
     extends qw(MyApp);                   # purely optional
     use Bio::Moose::HydraBreaksIO;
-    use Data::Dumper;
 
     option 'input_file' => (
         is            => 'rw',
@@ -228,7 +228,7 @@ class MyApp::Cluster {
     use Bio::Moose::BedIO;
     use Math::CDF;
     use File::Basename;
-    use Data::Dumper;
+    use Digest::SHA qw(sha256_hex);
     with 'Custom::Log';
 
     option 'input_file' => (
@@ -313,7 +313,15 @@ class MyApp::Cluster {
         documentation => 'Keep the genome size',
     );
     
-    
+    option 'index_file' => (
+        is            => 'ro',
+        isa           => 'Str',
+        cmd_aliases   => [qw(f)],
+        lazy          => 1,
+        builder        => '_builder_index_file',
+        documentation => q[Index filename],
+    );
+  
 
    method _builder_transloc_bed {
         my $in = Bio::Moose::BedIO->new( file => $self->input_file );
@@ -335,6 +343,18 @@ class MyApp::Cluster {
 
         #$self->log_info( "genome size " . $genome_size );
         return $genome_size;
+   } 
+
+   method _builder_index_file {
+       my $filename = $self->input_file;
+
+       if ($filename =~ /\.bed$/){
+            $filename =~ s/\.bed/\.hotspots_index/g;
+       }
+       else{
+            $filename.=".hotspots_index";    
+       }
+       return $filename;
    } 
 
     method parse_genome {
@@ -490,18 +510,36 @@ class MyApp::Cluster {
        my %cluster = %{$self->get_filtered_clusters};
        #say "Total clusters: ",scalar keys %cluster;
        my $i=1;
-       foreach (keys %cluster){
+       open( my $out_index, '>', $self->index_file ) 
+           || die "Cannot open/read file " . $self->index_file . "!";
+      
+       foreach (sort {$a <=> $b } keys %cluster){
             my @feat = @{$cluster{$_}->{features}};
+            my $n_feat = scalar @feat;
             my $p = $cluster{$_}->{pvalue};
             my $hotspot_len = $cluster{$_}->{hotspot_len};
             my $chr = $cluster{$_}->{chr};
             my $start = $cluster{$_}->{start};
             my $end = $cluster{$_}->{end};
 
+            my $ht_id = "hotspot".$i++;
+
             say join "\t",
-            ($chr,$start,$end,"hotspot".$i++,$hotspot_len,scalar
-                @feat,$cluster{$_}->{n_left},$cluster{$_}->{n_right},$p);     
+            ($chr,$start,$end,$ht_id,$hotspot_len,$n_feat,$cluster{$_}->{n_left},$cluster{$_}->{n_right},$p);
+
+            my @shear_names;
+            foreach my $f (@feat) {
+                push @shear_names, $f->name;
+            }
+            
+            my $sorted_shear_names_string = join( ",", sort { $a cmp $b } @shear_names );
+            my $hotspot_sha256_id = sha256_hex($sorted_shear_names_string);
+
+            say $out_index join( "\t", ( $ht_id, $hotspot_sha256_id ,$n_feat, $sorted_shear_names_string));
+
        }
+       close( $out_index );
+ 
     }
 }
 
