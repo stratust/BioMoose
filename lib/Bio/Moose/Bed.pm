@@ -16,14 +16,14 @@ class Bio::Moose::Bed {
         isa        => 'Int',
         required   => 1,
         predicate => 'has_chromStart',
-        dependency => SmallerThan ['chromEnd']
+        dependency => SmallerThan['chromEnd']
     );
     has 'chromEnd' => (
         is         => 'rw',
         isa        => 'Int',
         required   => 1,
         predicate => 'has_chromEnd',
-        dependency => BiggerThan ['chromStart']
+        dependency => BiggerThan['chromStart']
     );
     has 'name'        => ( is => 'rw', isa => 'Str' );
     has 'score'       => ( is => 'rw', isa => 'Num' );

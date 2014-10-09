@@ -5,9 +5,9 @@ use Method::Signatures::Modifiers;
 class Bio::Moose::BedTools {
     with 'MooseX::Role::Cmd';
     with 'Bio::Moose::Role::BEDFile';
-    use MooseX::Attribute::Dependent;
     use Bio::Moose::BedIO;
-
+    use MooseX::Attribute::Dependent;
+  
     sub build_bin_name { 'bedtools'}
 
     has 'i' => (
