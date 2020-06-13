@@ -121,7 +121,7 @@ class Bio::Moose::HydraBreaks {
         return $space;
     }
 
-    method write_bed12 ($dist=10000,$hash) {
+    method write_bed12 ($dist=10000,$hash='') {
         my $color;
         my $feature_name;
         my @rows;
